@@ -1,0 +1,15 @@
+# Line endings, pinned for the same reason the private repository pins them:
+# a content fingerprint is taken over the raw bytes of these files to decide
+# whether this repository is behind the source a release was built from
+# (`deploy/publish-detector.ps1`, in the private repository, reusing the same
+# digest `server/detector_build.py::_fingerprint` uses to decide whether the
+# binary needs rebuilding). Both therefore answer to CRLF.
+#
+# `text eol=lf` overrides `core.autocrlf` per file, so a checkout on Windows —
+# this one included — keeps LF in the working tree instead of writing back
+# CRLF that would move the digest with nobody having edited a line. Without
+# this file, a future `git clone` or `git reset --hard` into this checkout
+# would silently disagree with the private repository over bytes nobody
+# changed.
+*.py text eol=lf
+requirements-detector.txt text eol=lf

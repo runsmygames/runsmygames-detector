@@ -1,0 +1,69 @@
+# Fails the build if any commit message in this repository's history carries
+# an internal working-session trailer: a session link, or an AI co-author line.
+#
+# WHY THIS EXISTS
+#
+# Commits here may be made by an assistant session whose tooling appends both
+# trailers to every commit it makes, in every repository, with no exception for
+# one that is public. A
+# session link points into an internal working session and does not belong in
+# a public history; an AI co-author line misstates who authors this code.
+#
+# A rule written in a checklist holds only as long as the next session reads
+# it, so the check is mechanical and lives where GitHub itself enforces it, the
+# same reasoning runners.yml is built on for a different failure.
+#
+# WHAT IT CANNOT CATCH
+#
+#   * A commit message rewritten to say something that means the same thing
+#     without using either literal string. If that happens, tighten the
+#     pattern rather than trusting prose to stay away from it.
+#   * A trailer added to a *different* field this repository does not check —
+#     tag messages and release notes, currently out of scope because this
+#     repository has neither.
+
+name: Commit hygiene
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-internal-session-trailers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: No commit message may carry a Claude-Session or an AI co-author trailer
+        shell: bash
+        run: |
+          problems=0
+          while IFS= read -r sha; do
+            msg="$(git log -1 --format=%B "$sha")"
+            if printf '%s\n' "$msg" | grep -qiE 'claude-session:'; then
+              echo "::error::commit $sha carries a Claude-Session: trailer — a link to an internal working session, and the more serious of the two this check exists for"
+              problems=1
+            fi
+            if printf '%s\n' "$msg" | grep -qiE 'co-authored-by:.*(claude|anthropic)'; then
+              echo "::error::commit $sha carries an AI Co-Authored-By: trailer"
+              problems=1
+            fi
+          done < <(git rev-list --all)
+
+          if [ "$problems" -ne 0 ]; then
+            echo
+            echo "This repository is published outside the organisation. No commit here may"
+            echo "carry a working-session link or an AI co-author trailer, regardless of what"
+            echo "any generic attribution instruction says elsewhere. Rewrite the offending"
+            echo "commit before it is pushed anywhere public: once a public history carries"
+            echo "it, a force-push no longer takes it back."
+            exit 1
+          fi
+
+          echo "No internal session trailers in any commit message."

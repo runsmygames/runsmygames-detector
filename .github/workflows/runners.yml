@@ -1,0 +1,154 @@
+# The guard. Every job in this repository runs on a machine GitHub owns, and
+# this workflow fails the build if that ever stops being true.
+#
+# WHY A REPOSITORY THIS SMALL CARRIES A WORKFLOW WHOSE ONLY JOB IS SAYING NO
+#
+# The RunsMyGames site is built and deployed from a private repository, and a
+# self-hosted GitHub Actions runner is registered there. That arrangement is
+# safe exactly because that repository is private: on a PUBLIC repository, a
+# stranger's pull request can execute on a registered self-hosted runner, which
+# here would mean running their code on a machine that is not GitHub's.
+#
+# This repository is public. So the rule is absolute: no self-hosted runner, and
+# no workflow that asks for one.
+#
+# The private repository refuses to mirror source into a checkout that mentions
+# a self-hosted runner (`deploy/publish-detector.ps1` over there). That covers
+# everything arriving through the mirror. It cannot see a change made any other
+# way — a file edited in GitHub's web UI, a pull request, a second clone,
+# somebody in six months copying a workflow across because it looked useful.
+# This file is the check that lives where those changes land.
+#
+# WHAT IT CANNOT CATCH, SAID OUT LOUD SO NOBODY TRUSTS IT FOR MORE
+#
+#   * A runner registered at the ORGANISATION level. An org-scope runner is
+#     offered to every repository in the org, including this one, and nothing
+#     inside a repository can see that setting. Only the org owner can.
+#   * Somebody with write access who edits or deletes this file in the same
+#     change. Branch protection requiring this check is what closes that; a
+#     workflow cannot protect itself.
+#
+# It catches the realistic case, which is not an attacker: it is a future
+# maintainer with good intentions and a useful-looking YAML file.
+
+name: Runners
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  github-hosted-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Every job must run on a machine GitHub owns
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          # This file has to name the strings it forbids, so it is the one file
+          # exempt from the string rules. Everything else under .github/ is not.
+          SELF = ".github/workflows/runners.yml"
+
+          # The only runners this repository may ask for. A self-hosted runner
+          # can be reached by a bare custom label with no `self-hosted` in
+          # sight, so the label rule is an allow-list rather than a deny-list —
+          # that is the half a grep for "self-hosted" misses.
+          HOSTED = re.compile(r"^(ubuntu|windows|macos)-[0-9a-z.\-]+$")
+
+          # Built by concatenation rather than written out whole: GitHub's own
+          # workflow parser scans this *file's raw text* for an expression
+          # opener and refuses the whole workflow if it finds one with no
+          # matching closer, regardless of the Python string it sits inside.
+          # The literal four characters below never appear contiguously
+          # anywhere in this file for exactly that reason: written out whole,
+          # they stop this workflow from parsing, and it runs no jobs at all.
+          EXPR_OPEN = "$" + "{{"
+
+          BANNED = [
+              ("self-hosted", re.compile(r"self-hosted", re.I)),
+              ("runsmygames-lan", re.compile(r"runsmygames-lan", re.I)),
+              # `runs-on:` with a `group:` under it is the runner-GROUP form:
+              # it names no label at all, so the allow-list above never sees
+              # it. Matched as nested rather than bare, because `concurrency:
+              # group:` is a legitimate key and a check that cries wolf is a
+              # check somebody loosens.
+              ("a runner group", re.compile(
+                  r"^[ \t]*runs-on:[ \t]*(?:#[^\r\n]*)?\r?\n"
+                  r"(?:[ \t]*(?:#[^\r\n]*)?\r?\n)*[ \t]+group:", re.M)),
+          ]
+
+          RUNS_ON = re.compile(r"^[ \t]*runs-on:[ \t]*(.*?)[ \t]*(?:#.*)?$", re.M)
+          MATRIX_OS = re.compile(r"^[ \t]*-[ \t]*(?:os:[ \t]*)?([A-Za-z0-9._-]+)[ \t]*$", re.M)
+
+          def labels(raw):
+              """The concrete labels a `runs-on:` value asks for."""
+              raw = raw.strip().strip("'\"")
+              if raw.startswith("["):
+                  return [p.strip().strip("'\"") for p in raw[1:-1].split(",") if p.strip()]
+              return [raw] if raw else []
+
+          problems = []
+          for path in sorted(pathlib.Path(".github").rglob("*")):
+              if not path.is_file():
+                  continue
+              rel = path.as_posix()
+              text = path.read_text(encoding="utf-8", errors="replace")
+
+              if rel != SELF:
+                  for what, pattern in BANNED:
+                      m = pattern.search(text)
+                      if m:
+                          line = text[:m.start()].count("\n") + 1
+                          problems.append(f"{rel}:{line}: names {what}")
+
+              if not rel.startswith(".github/workflows/") or path.suffix not in (".yml", ".yaml"):
+                  continue
+
+              # Every matrix value that could feed a runs-on expression. Read
+              # from the whole file rather than resolved, deliberately: an
+              # over-broad read fails a workflow that was fine, which somebody
+              # notices and fixes. Resolving it properly and getting it wrong
+              # passes one that was not, which nobody notices at all.
+              matrix_values = set(MATRIX_OS.findall(text))
+
+              for m in RUNS_ON.finditer(text):
+                  line = text[:m.start()].count("\n") + 1
+                  raw = m.group(1)
+                  if not raw:
+                      continue          # block form; the group rule covers it
+                  if EXPR_OPEN in raw:
+                      unhosted = sorted(v for v in matrix_values if not HOSTED.match(v))
+                      if not matrix_values:
+                          problems.append(
+                              f"{rel}:{line}: runs-on is an expression with no matrix "
+                              f"values to check. Write the runner out literally.")
+                      elif unhosted:
+                          problems.append(
+                              f"{rel}:{line}: runs-on resolves from a matrix holding "
+                              f"{unhosted}, which is not a GitHub-hosted runner")
+                      continue
+                  for label in labels(raw):
+                      if not HOSTED.match(label):
+                          problems.append(
+                              f"{rel}:{line}: runs-on '{label}' is not a GitHub-hosted "
+                              f"runner (ubuntu-*, windows-*, macos-*)")
+
+          if problems:
+              for p in problems:
+                  print(f"::error::{p}")
+              print()
+              print("This repository is public. A self-hosted runner here would let a")
+              print("stranger's pull request execute on somebody's home machine. Every")
+              print("job runs on a runner GitHub owns; there is no exception to add.")
+              sys.exit(1)
+
+          print("All jobs under .github/ run on GitHub-hosted runners.")
+          PY

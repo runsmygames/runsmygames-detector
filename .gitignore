@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+*.spec
+.venv/
+venv/
+
+# Editor and OS droppings. They say something about the machine somebody works
+# on rather than about the program, and a first public commit that carries one
+# looks careless for no benefit.
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Written by build.py with the address that build's binary will call. Never
+# committed: somebody else's address sitting in here would silently redirect
+# every binary built from this clone, and it is regenerated in seconds by
+# whoever needs it.
+detector/_build_config.py
+
+# `python -m detector.app --diagnose` / `RunsMyGames.exe --diagnose` writes a
+# local-only dump of one machine's hardware reads. Nothing uploads it; whoever
+# runs it decides by hand whether to send it anywhere.
+runsmygames_diagnostic.json

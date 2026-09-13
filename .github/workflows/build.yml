@@ -1,0 +1,112 @@
+# Builds the detector from this repository, so that anybody can watch it happen.
+#
+# THIS IS NOT WHERE THE DOWNLOAD COMES FROM, AND THAT IS DELIBERATE
+#
+# The project publishes the code and builds the shipped binary in the private
+# repository, so this workflow must not quietly become the release pipeline:
+#
+#   * it uploads artifacts and never creates a Release;
+#   * it attaches nothing to a tag;
+#   * it does not attest provenance, although a public repository could — an
+#     attestation here would be a cryptographic statement about a demonstration
+#     build, and the binary people actually download is not this one. A proof
+#     that points at the wrong artefact is worse than no proof.
+#
+# What it is for is the thing a public repository is for: a stranger who does
+# not trust a downloaded .exe can read the source, press the button, and get a
+# binary out of it. `runsmygames.com/download` still serves the one built in
+# private, with a checksum and no provenance claim.
+#
+# Releasing from here would take three additions: `id-token: write` and
+# `attestations: write`, an `actions/attest-build-provenance` step, and a
+# release step gated on a tag.
+#
+# EVERY JOB HERE RUNS ON A MACHINE GITHUB OWNS. runners.yml beside this file
+# fails the build if that ever stops being true, this file included — and it is
+# the only file in the repository allowed to write the forbidden label out, so
+# that "the string appears exactly once, in the file that bans it" is a property
+# anybody can check with a grep.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `RunsMyGames` rather than the game's name: describing a machine is
+          # fine, naming somebody else's product is not.
+          - os: windows-latest
+            artifact: RunsMyGames-windows
+            binary: RunsMyGames.exe
+          - os: ubuntu-latest
+            artifact: RunsMyGames-linux
+            binary: RunsMyGames
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          # setup-python's pip cache looks for requirements.txt or
+          # pyproject.toml and FAILS the step outright when it finds neither.
+          # This repository has one requirements file and it is not called that.
+          cache-dependency-path: requirements-detector.txt
+
+      # The detector's window is tkinter, which is a separate package on Linux
+      # and part of the Python install on Windows.
+      - name: Install tkinter (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+      # Through `build.py`, and not by calling PyInstaller directly.
+      #
+      # This workflow's only job is proving that the path a stranger walks
+      # works. A direct `pyinstaller --onefile ...` here would prove that *some*
+      # invocation builds, which is not the same claim: `build.py` could break
+      # and this would stay green until somebody who cloned the repository found
+      # out for us. The README documents one command; CI runs that command.
+      #
+      # It installs its own dependencies (`requirements-detector.txt` plus
+      # PyInstaller), so there is no separate install step — again because a
+      # stranger has no separate install step.
+      #
+      # `--server` is required and has no default by design, so CI must name
+      # one. `https://example.invalid` is deliberate: `.invalid` is reserved by
+      # RFC 2606 and can never resolve, so the artefact below cannot be mistaken
+      # for something worth running. The binary people actually download is
+      # built elsewhere and points at the real site.
+      - name: Build, exactly as the README says to
+        run: python build.py --server https://example.invalid
+
+      - name: Checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "${{ matrix.binary }}" > "${{ matrix.binary }}.sha256"
+          cat "${{ matrix.binary }}.sha256"
+
+      # A build of this commit, for reading and comparing. Not the download.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.binary }}
+            dist/${{ matrix.binary }}.sha256

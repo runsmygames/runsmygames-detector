@@ -1,0 +1,4 @@
+# What ships inside the binary. Kept deliberately short: every dependency here
+# is weight in the executable and one more thing an antivirus can dislike.
+requests>=2.28
+psutil>=5.9

@@ -1,0 +1,5 @@
+# For running the tests. The binary itself needs only requirements-detector.txt
+# — this file adds pytest and nothing else, so what the executable ships and
+# what the suite needs can never be confused for each other.
+-r requirements-detector.txt
+pytest>=8.0
