@@ -161,4 +161,67 @@ def test_success_hands_over_the_link(window, monkeypatch, modern_pc):
     window.update()
     assert opened == ["https://example/claim/abc"]
     # The link is also shown, so a browser that refused to open isn't a dead end.
-    assert "https://example/claim/abc" in window.detail.get()
+    assert window.link_entry.get() == "https://example/claim/abc"
+
+
+def test_the_shown_link_can_be_selected_and_copied(window, monkeypatch):
+    """The screen that exists for a browser that did not open.
+
+    Whoever reads this screen has to get the address into a browser by hand,
+    so both ways of taking it have to be there: a field they can select from,
+    and a control that does it for them. A `ttk.Label` offers neither, which
+    is what this replaced.
+    """
+    monkeypatch.setattr(detector_app.webbrowser, "open", lambda _u: None)
+    window._done({"token": "abc", "url": "https://example/claim/abc"})
+    window.update()
+
+    assert window.link_entry in window.link_entry.master.pack_slaves()
+    assert str(window.link_entry["state"]) == "readonly"    # selectable, not dead
+    assert window.copy in window.copy.master.pack_slaves()
+
+    window.clipboard_clear()
+    window._copy_link()
+    window.update()
+    assert window.clipboard_get() == "https://example/claim/abc"
+
+
+def test_copying_says_it_copied_and_then_offers_the_job_again(window,
+                                                               monkeypatch):
+    """A control that answers nothing gets pressed again."""
+    monkeypatch.setattr(detector_app.webbrowser, "open", lambda _u: None)
+    window._done({"token": "abc", "url": "https://example/claim/abc"})
+    window._copy_link()
+    assert window.copy["text"] == detector_app.COPIED_LABEL
+
+    window._offer_copy_again()
+    assert window.copy["text"] == detector_app.COPY_LABEL
+
+
+def test_the_link_and_its_copy_control_only_exist_once_there_is_a_link(window):
+    """Every other state has nothing to copy, so it shows nothing to copy."""
+    window._set_state("Checking what this computer is…", busy=True)
+    assert window.link_entry not in window.link_entry.master.pack_slaves()
+    assert window.copy not in window.copy.master.pack_slaves()
+
+    window._failed("Could not read your hardware: nope")
+    assert window.link_entry not in window.link_entry.master.pack_slaves()
+    assert window.copy not in window.copy.master.pack_slaves()
+
+
+def test_copying_with_no_link_touches_nothing(window):
+    """The guard that keeps an empty state from emptying the clipboard."""
+    window.clipboard_clear()
+    window.clipboard_append("something the user already had")
+    window._set_link("")
+    window._copy_link()
+    assert window.clipboard_get() == "something the user already had"
+
+
+def test_the_copy_control_reads_as_words_as_well_as_a_glyph():
+    """Tk draws an uncovered character as an empty box, and which characters a
+    machine covers varies. The label has to survive that, so the icon is never
+    the only thing on the button."""
+    for label in (detector_app.COPY_LABEL, detector_app.COPIED_LABEL):
+        words = "".join(c for c in label if c.isascii()).strip()
+        assert words and any(c.isalpha() for c in words), label

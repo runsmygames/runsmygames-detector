@@ -30,6 +30,16 @@ SOURCE_URL = "https://github.com/runsmygames/runsmygames-detector"
 
 BODY_WIDTH = 520
 
+# The copy control carries a glyph *and* the word, because the two can only
+# fail apart. Tk draws a character no available font covers as an empty box,
+# and which fonts are there differs by machine, so a button that is only a
+# glyph is a button that is sometimes blank. With the word beside it the
+# control still says what it does wherever the icon does not arrive.
+COPY_LABEL = "⧉ Copy link"
+COPIED_LABEL = "⧉ Copied"
+# How long the button stands as its own receipt before it offers the job again.
+COPIED_FOR_MS = 2000
+
 
 class DetectorApp(tk.Tk):
     def __init__(self, server_url: str | None = None):
@@ -44,6 +54,7 @@ class DetectorApp(tk.Tk):
         self.resizable(False, True)
         self.minsize(600, 460)
         self.payload: dict | None = None
+        self._copy_reset: str | None = None
         self._build_ui()
         self.after(200, self._start_detection)
 
@@ -74,9 +85,20 @@ class DetectorApp(tk.Tk):
 
         # What was found. Monospaced so the labelled rows line up.
         self.detail = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=self.detail, wraplength=BODY_WIDTH,
-                  justify="left", font=("Consolas", 9),
-                  foreground="#444").pack(anchor="w", pady=(14, 0))
+        self.detail_label = ttk.Label(frame, textvariable=self.detail,
+                                      wraplength=BODY_WIDTH, justify="left",
+                                      font=("Consolas", 9), foreground="#444")
+        self.detail_label.pack(anchor="w", pady=(14, 0))
+
+        # The claim link, in a field rather than in the detail text above. A
+        # label's text cannot be selected, so a link drawn in one can only be
+        # read out by hand — and this is the one screen somebody reaches
+        # *because* their browser did not open, which is the moment they have
+        # no other way through. Read-only rather than disabled: a disabled
+        # entry cannot be selected either. It belongs to the finished state and
+        # is packed there, directly under the text that introduces it.
+        self.link_entry = ttk.Entry(frame, state="readonly",
+                                    font=("Consolas", 9))
 
         # Where it goes, in the same column as what goes. The window's whole
         # claim is that everything it sends is on screen first, and *where* is
@@ -110,6 +132,10 @@ class DetectorApp(tk.Tk):
                                 command=self._start_detection)
         self.retry.pack(side="right", padx=(0, 8))
         self.retry.pack_forget()
+        # Wide enough for either label, so that confirming the copy does not
+        # resize the button under the pointer that just pressed it.
+        self.copy = ttk.Button(buttons, text=COPY_LABEL, width=12,
+                               command=self._copy_link)
 
     # --------------------------------------------------------- helpers
     def _server(self) -> str:
@@ -135,6 +161,24 @@ class DetectorApp(tk.Tk):
             self.retry.pack(side="right", padx=(0, 8))
         else:
             self.retry.pack_forget()
+        # The link and the control that copies it exist only while there is a
+        # link. `_done` is the one state that has one, and it puts them back.
+        self._set_link("")
+        self.link_entry.pack_forget()
+        self.copy.pack_forget()
+
+    def _set_link(self, url: str) -> None:
+        """Put a link in the field, or empty it.
+
+        The field is read-only so that its text can be selected without being
+        edited, and read-only is also the one state an entry will not take
+        text in — hence the step out and back.
+        """
+        self.link_entry.configure(state="normal")
+        self.link_entry.delete(0, "end")
+        if url:
+            self.link_entry.insert(0, url)
+        self.link_entry.configure(state="readonly")
 
     def _on_ui(self, fn, *args, **kwargs) -> None:
         """Run a callback on the tkinter thread."""
@@ -179,14 +223,43 @@ class DetectorApp(tk.Tk):
         self._on_ui(self._done, result)
 
     def _done(self, result: dict) -> None:
-        webbrowser.open(result["url"])
+        url = result["url"]
+        webbrowser.open(url)
         self._set_state(
             "Continue in your browser.",
             "Sign in through Steam there and your report will be ready.\n\n"
-            f"{result['url']}\n\n"
-            "If nothing opened, copy that link into your browser.")
+            "If nothing opened, take this link into your browser:")
+        self._set_link(url)
+        self.link_entry.pack(fill="x", pady=(10, 0), after=self.detail_label)
+        # Selected on arrival, so the link reads as something to be taken
+        # rather than as one more line of text to look at.
+        self.link_entry.selection_range(0, "end")
+        self.copy.configure(text=COPY_LABEL)
+        self.copy.pack(side="right", padx=(0, 8))
         self.action.configure(text="Open again", state="normal",
-                              command=lambda: webbrowser.open(result["url"]))
+                              command=lambda: webbrowser.open(url))
+
+    def _copy_link(self) -> None:
+        """Put the claim link on the clipboard, and show that it went.
+
+        A copy control that answers nothing gets pressed again, because there
+        is nowhere to look for what happened. The button becomes its own
+        receipt and returns to offering the job a moment later.
+        """
+        url = self.link_entry.get()
+        if not url:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(url)
+        self.link_entry.selection_range(0, "end")
+        self.copy.configure(text=COPIED_LABEL)
+        if self._copy_reset is not None:
+            self.after_cancel(self._copy_reset)
+        self._copy_reset = self.after(COPIED_FOR_MS, self._offer_copy_again)
+
+    def _offer_copy_again(self) -> None:
+        self._copy_reset = None
+        self.copy.configure(text=COPY_LABEL)
 
 
 def main() -> None:
