@@ -264,7 +264,7 @@ def test_an_answer_without_a_link_is_an_error(monkeypatch, payload):
 
 def test_unreadable_answer_is_an_error(monkeypatch, payload):
     monkeypatch.setattr(report.requests, "post", lambda *a, **k: _Resp(200))
-    with pytest.raises(report.UploadError, match="unreadable"):
+    with pytest.raises(report.UploadError, match="Unreadable"):
         report.upload(payload)
 
 
@@ -379,7 +379,7 @@ def test_an_answer_that_is_not_an_object_is_an_error(monkeypatch, payload):
     """`r.json()` can legally return a list, and `.get` would have raised."""
     monkeypatch.setattr(report.requests, "post",
                         lambda *a, **k: _Resp(200, ["https://evil.example/"]))
-    with pytest.raises(report.UploadError, match="unreadable"):
+    with pytest.raises(report.UploadError, match="Unreadable"):
         report.upload(payload, POSTED_TO)
 
 
