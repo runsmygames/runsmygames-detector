@@ -17,6 +17,8 @@ from pathlib import Path
 import psutil
 
 from shared.specs import SystemSpecs
+# In `shared/` since the server reads the same board from a pasted command.
+from shared.specs import clean_board as _clean_board
 
 __all__ = ["SystemSpecs", "detect_system", "detect_system_with_raw",
           "steam_library_paths"]
@@ -195,16 +197,6 @@ def _as_int(text: str, low: int, high: int) -> int:
     except (TypeError, ValueError):
         return 0
     return value if low <= value <= high else 0
-
-
-def _clean_board(text: str) -> str:
-    """Drop the placeholders firmware writes when nobody filled the field in."""
-    text = re.sub(r"\s+", " ", text).strip(" -")
-    if not text or re.search(r"to be filled|o\.?e\.?m\.?|default string|"
-                             r"^system (manufacturer|product)|invalid|none$",
-                             text, re.I):
-        return ""
-    return text[:120]
 
 
 def _detect_platform() -> dict:

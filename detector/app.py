@@ -22,7 +22,7 @@ from detector import hardware, report
 # `server`, and this is shown in a window that has to work offline.
 #
 # **This is the detector's own public repository, not the site's.** The window
-# offers it as "see exactly what it does", so it has to be a page the person
+# offers it as "Open source", so it has to be a page the person
 # clicking can actually open, and the site's repository is private. Only the
 # seven modules in `tests/detector/test_publishable.PUBLISHED` are over there,
 # which is the whole of what this program is.
@@ -65,7 +65,7 @@ class DetectorApp(tk.Tk):
 
         ttk.Label(frame, text="RunsMyGames",
                   font=("", 16, "bold")).pack(anchor="w")
-        self.headline = tk.StringVar(value="Checking what this computer is…")
+        self.headline = tk.StringVar(value="Reading your hardware…")
         ttk.Label(frame, textvariable=self.headline, wraplength=BODY_WIDTH,
                   font=("", 10)).pack(anchor="w", pady=(6, 12))
 
@@ -111,14 +111,11 @@ class DetectorApp(tk.Tk):
 
         self.disclosure = ttk.Label(
             frame, wraplength=BODY_WIDTH, justify="left", foreground="#555",
-            text=("This is everything that gets sent. Your browser opens next, "
-                  "where you sign in through Steam so we know which games to "
-                  "check against — your password is only ever typed on Steam's "
-                  "own site."))
+            text="Next, your browser opens to sign in through Steam.")
         self.disclosure.pack(anchor="w", pady=(12, 0))
         self.disclosure.pack_forget()
 
-        link = ttk.Label(frame, text="Open source — see exactly what it does",
+        link = ttk.Label(frame, text="Open source",
                          foreground="#0b57d0", cursor="hand2")
         link.pack(anchor="w", pady=(8, 0))
         link.bind("<Button-1>", lambda _e: webbrowser.open(SOURCE_URL))
@@ -186,7 +183,7 @@ class DetectorApp(tk.Tk):
 
     # ------------------------------------------------------ detection
     def _start_detection(self) -> None:
-        self._set_state("Checking what this computer is…", busy=True)
+        self._set_state("Reading your hardware…", busy=True)
         threading.Thread(target=self._detect, daemon=True).start()
 
     def _detect(self) -> None:
@@ -199,7 +196,7 @@ class DetectorApp(tk.Tk):
 
     def _ready(self, payload: dict) -> None:
         self.payload = payload
-        self._set_state("Here's what we found:",
+        self._set_state("What gets sent:",
                         report.describe_payload(payload), can_upload=True)
 
     def _failed(self, message: str) -> None:
@@ -227,8 +224,7 @@ class DetectorApp(tk.Tk):
         webbrowser.open(url)
         self._set_state(
             "Continue in your browser.",
-            "Sign in through Steam there and your report will be ready.\n\n"
-            "If nothing opened, take this link into your browser:")
+            "If nothing opened, use this link:")
         self._set_link(url)
         self.link_entry.pack(fill="x", pady=(10, 0), after=self.detail_label)
         # Selected on arrival, so the link reads as something to be taken

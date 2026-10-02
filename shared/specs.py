@@ -47,6 +47,23 @@ def _text(value: object, limit: int = 120) -> str:
     return str(value).encode("utf-8", "ignore").decode("utf-8")[:limit]
 
 
+def clean_board(text: str) -> str:
+    """A board's vendor and product, less the placeholders firmware writes.
+
+    "To Be Filled By O.E.M." and its relatives mean nobody filled the field in,
+    so they read as no board rather than as one. Here rather than in the
+    detector because the server reads the same two firmware strings when a
+    visitor pastes them (`server/pasted_hardware.py`), and one rule for both
+    is what keeps a pasted machine identical to a detected one.
+    """
+    text = re.sub(r"\s+", " ", text).strip(" -")
+    if not text or re.search(r"to be filled|o\.?e\.?m\.?|default string|"
+                             r"^system (manufacturer|product)|invalid|none$",
+                             text, re.I):
+        return ""
+    return text[:120]
+
+
 @dataclass
 class SystemSpecs:
     os_name: str = ""

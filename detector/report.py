@@ -127,14 +127,13 @@ def claim_url(base: str, url: object) -> str:
     with the published source documents pointing a build at another server.
     """
     if not isinstance(url, str) or not url.strip():
-        raise UploadError("The server did not return a link to continue at.")
+        raise UploadError("The server returned no link.")
     parsed = urlparse(url.strip())
     ours = _origin(base)
     if ours is None or _origin(parsed.geturl()) != ours:
         raise UploadError(
-            f"{display_url(base)} answered with a link that leads somewhere "
-            "else, so it was not opened. Your report went to that address and "
-            "nowhere else. Please report this — it is a bug on our side.")
+            f"{display_url(base)} returned a link to another site. "
+            "It was not opened.")
     return parsed.geturl()
 
 
@@ -197,34 +196,29 @@ def upload(payload: dict, server_url: str | None = None) -> dict:
         # one failure that is *about* the destination, and hiding it would
         # leave nothing on screen to act on.
         raise UploadError(
-            f"Could not reach {display_url(base)}.\n\n"
-            "Check your internet connection and try again. If that is not "
-            "where this report should go, start the detector with "
-            "RUNSMYGAMES_SERVER set to the right address.") from exc
+            f"Could not reach {display_url(base)}. "
+            "Check your internet connection.") from exc
 
     if r.status_code == 413:
-        raise UploadError("That report is too large to upload. Please report "
-                          "this — it is a bug on our side.")
+        raise UploadError("Report too large to upload. That is our bug.")
     if r.status_code in (401, 407):
         # Almost always a preproduction server behind HTTP basic auth rather
         # than anything the API did. Saying so turns a confusing hour into a
         # one-line fix, and the real site never returns this.
         raise UploadError(
-            f"{display_url(base)} asked for a username and password. If that's "
-            "a test server behind basic auth, put the credentials in the URL:\n"
-            "  RUNSMYGAMES_SERVER=https://user:password@host")
+            f"{display_url(base)} needs a username and password: "
+            "RUNSMYGAMES_SERVER=https://user:password@host")
     if r.status_code == 403:
-        raise UploadError(f"{display_url(base)} refused the upload (403). If "
-                          "that's a test server, check it allows this machine.")
+        raise UploadError(f"{display_url(base)} refused the upload (HTTP 403).")
     if r.status_code != 200:
         raise UploadError(f"The server refused the report (HTTP {r.status_code}).")
     try:
         data = r.json()
     except ValueError as exc:
-        raise UploadError("The server sent back an unreadable answer.") from exc
+        raise UploadError("Unreadable answer from the server.") from exc
 
     if not isinstance(data, dict):
-        raise UploadError("The server sent back an unreadable answer.")
+        raise UploadError("Unreadable answer from the server.")
 
     # The trust boundary. Past this line `data["url"]` is a link to our own
     # server and callers may open it; before it, it is a string a server chose.
